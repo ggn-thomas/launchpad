@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+# Real launch configs. `.env` alone only matches the exact filename, so
+# `.env.mainnet` and friends need their own rule — only the template is tracked.
+.env
+.env.*
+!.env.example
+
+# Launch records hold the config, mint and pool addresses for each token.
+.launch/
+
+# The generated metadata JSON and the logo you upload from here both live on
+# Irys, which is their source of truth. Only the guide is tracked.
+metadata/*
+!metadata/README.md
