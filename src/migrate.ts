@@ -2,9 +2,10 @@ import {
   DAMM_V2_MIGRATION_FEE_ADDRESS,
   DynamicBondingCurveClient,
 } from '@meteora-ag/dynamic-bonding-curve-sdk'
-import { PublicKey } from '@solana/web3.js'
+import { PublicKey, type Connection, type Keypair } from '@solana/web3.js'
 import { assertFunded, config, createConnection, loadKeypair } from './env.js'
-import { loadLaunch } from './lib/store.js'
+import { routeLeftover } from './lib/leftover.js'
+import { loadLaunch, type LaunchRecord } from './lib/store.js'
 import { explorerTx, sendTransaction } from './lib/tx.js'
 
 /** Values of `migrationProgress` on the pool account. */
@@ -44,7 +45,8 @@ async function main(): Promise<void> {
     throw new Error('The curve has not completed yet. Run `npm run status` to see how far it is.')
   }
   if (progress === CREATED_POOL) {
-    console.log('Already migrated. Nothing to do.')
+    console.log('Already migrated.')
+    await leftoverAfterMigration(connection, client, launch, payer)
     return
   }
 
@@ -79,6 +81,32 @@ async function main(): Promise<void> {
   console.log(`  position 2  ${secondPositionNftKeypair.publicKey.toBase58()}`)
   console.log(`  ${explorerTx(signature)}`)
   console.log('\nTrading now happens on the DAMM v2 pool. `npm run status` still reads the DBC record.')
+
+  await leftoverAfterMigration(connection, client, launch, payer)
+}
+
+/**
+ * The leftover becomes withdrawable the moment the DAMM v2 pool exists, and
+ * from then on anyone may withdraw it to the partner wallet, unsplit. Routing
+ * it right away keeps that window as short as this script can make it.
+ *
+ * The migration has landed by this point, so a failure here must not read as a
+ * failed migration: it is reported, and `claim` retries it.
+ */
+async function leftoverAfterMigration(
+  connection: Connection,
+  client: DynamicBondingCurveClient,
+  launch: LaunchRecord,
+  payer: Keypair,
+): Promise<void> {
+  if (config.token.leftover === 0) return
+  console.log('\nLeftover')
+  try {
+    await routeLeftover(connection, client, launch, [loadKeypair(config.wallets.partner), payer])
+  } catch (error) {
+    console.log(`  not routed: ${error instanceof Error ? error.message : String(error)}`)
+    console.log('  The pool is migrated regardless. Run `launchpad claim` to retry the leftover.')
+  }
 }
 
 main().catch((error: unknown) => {

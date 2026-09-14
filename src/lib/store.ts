@@ -15,6 +15,8 @@ export type LaunchRecord = {
   partner: string
   creator: string
   launchedAt: string
+  /** Signature of the transaction that sent the leftover split; guards against sending it twice. */
+  leftoverSplit?: string
 }
 
 function recordPath(symbol: string): string {

@@ -72,6 +72,17 @@ function bool(key: string, fallback: boolean): boolean {
   throw new ConfigError(key, `expected true or false, got "${value}"`)
 }
 
+/** An optional Solana address: unset is null, anything else must be valid base58. */
+function address(key: string): PublicKey | null {
+  const value = raw(key)
+  if (value === undefined) return null
+  try {
+    return new PublicKey(value)
+  } catch {
+    throw new ConfigError(key, `not a valid Solana address: "${value}"`)
+  }
+}
+
 /** Maps a friendly .env string onto an SDK enum, listing valid values on a miss. */
 function choice<T>(key: string, options: Record<string, T>, fallback?: string): T {
   const value = (raw(key) ?? fallback)?.toLowerCase()
@@ -142,6 +153,23 @@ function buildConfig() {
       website: raw('TOKEN_WEBSITE') ?? '',
       twitter: raw('TOKEN_TWITTER') ?? '',
       telegram: raw('TOKEN_TELEGRAM') ?? '',
+    },
+
+    /**
+     * Where the leftover goes once withdrawn. The program pays it to a single
+     * address, the partner wallet, so the split is done by `migrate` and `claim`
+     * (src/lib/leftover.ts): they withdraw and forward both parts in one atomic
+     * transaction, so the tokens never sit on the partner wallet between steps.
+     *
+     * Leave both wallets unset to keep the whole leftover on the partner wallet.
+     */
+    leftoverSplit: {
+      /** Receives exactly LEFTOVER_COMMUNITY_AMOUNT tokens. */
+      communityWallet: address('LEFTOVER_COMMUNITY_WALLET'),
+      /** Receives the rest, which includes the program's rounding dust. */
+      treasuryWallet: address('LEFTOVER_TREASURY_WALLET'),
+      /** Whole tokens, not base units. */
+      communityAmount: int('LEFTOVER_COMMUNITY_AMOUNT', 0),
     },
 
     curve: {
@@ -257,6 +285,26 @@ function validate(config: LaunchConfig): void {
   }
   if (config.curve.migrationMarketCap <= config.curve.initialMarketCap) {
     throw new Error('MIGRATION_MARKET_CAP must be above INITIAL_MARKET_CAP.')
+  }
+
+  const { communityWallet, treasuryWallet, communityAmount } = config.leftoverSplit
+  if ((communityWallet === null) !== (treasuryWallet === null)) {
+    throw new Error('Set both LEFTOVER_COMMUNITY_WALLET and LEFTOVER_TREASURY_WALLET, or neither.')
+  }
+  if (communityWallet && treasuryWallet) {
+    if (communityWallet.equals(treasuryWallet)) {
+      throw new Error('LEFTOVER_COMMUNITY_WALLET and LEFTOVER_TREASURY_WALLET must be different addresses.')
+    }
+    if (communityAmount <= 0) {
+      throw new Error('LEFTOVER_COMMUNITY_AMOUNT is required, in whole tokens, when the leftover split wallets are set.')
+    }
+    // The treasury takes the remainder, so it must be left with something.
+    if (communityAmount >= config.token.leftover) {
+      throw new Error(
+        `LEFTOVER_COMMUNITY_AMOUNT (${communityAmount}) must be below TOKEN_LEFTOVER (${config.token.leftover}): ` +
+          'the treasury receives the remainder.',
+      )
+    }
   }
 }
 

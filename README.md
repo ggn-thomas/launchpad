@@ -192,6 +192,26 @@ run, or on mainnet below the 10 SOL / 750 USDC / 1500 JUP keeper threshold. A
 pool with locked vesting stops at `PostBondingCurve` and needs its escrow
 created first, so the script runs two transactions instead of one.
 
+### Splitting the leftover
+
+The program pays the whole leftover to one address, the partner wallet, fixed
+in the config at launch. To send it to two wallets instead — two multisig
+vaults, say — set `LEFTOVER_COMMUNITY_WALLET`, `LEFTOVER_TREASURY_WALLET` and
+`LEFTOVER_COMMUNITY_AMOUNT`. `migrate` then withdraws and splits it right after
+migrating, and `claim` does the same for a pool a keeper migrated. The
+withdrawal and both transfers are one transaction, so the tokens never rest on
+the partner wallet. The community wallet gets exactly its amount; the treasury
+gets the rest, which includes a little curve rounding.
+
+For a Squads multisig, use the **vault** address. Tokens sent to the multisig
+account itself can never be moved, so `preview` and the split both refuse any
+address owned by a program.
+
+Withdrawing the leftover is permissionless: anyone can do it first, which lands
+it unsplit on the partner wallet. `claim` finds that withdrawal in the pool
+history and, with `launchpad claim --forward-leftover`, sends the split from
+there. The signature is written to the launch record so it cannot go out twice.
+
 ### Re-running a step
 
 `metadata` is idempotent. Every `irys upload` produces a **new** URL — you

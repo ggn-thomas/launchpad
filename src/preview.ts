@@ -6,6 +6,7 @@ import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk
 import { config, createConnection, loadKeypair } from './env.js'
 import { quotePriceUsd, usd } from './lib/price.js'
 import { checkTokenUri } from './lib/metadata.js'
+import { checkRecipient } from './lib/recipient.js'
 
 /**
  * Asks the program itself whether this config is valid.
@@ -36,6 +37,11 @@ async function validateAgainstProgram(): Promise<string> {
 
   const simulation = await connection.simulateTransaction(tx)
   if (!simulation.value.err) return 'accepted'
+  // The one failure that says nothing about the config: the payer does not
+  // exist on this cluster yet, which is how an unfunded wallet looks.
+  if (simulation.value.err === 'AccountNotFound') {
+    return `not run — partner wallet ${partner.publicKey.toBase58()} has no SOL on this cluster, fund it first`
+  }
   const anchorError = simulation.value.logs?.find((line) => line.includes('Error Code'))
   return anchorError?.replace(/^Program log: /, '') ?? JSON.stringify(simulation.value.err)
 }
@@ -81,6 +87,29 @@ async function main(): Promise<void> {
   }
   console.log(`  ${'total'.padEnd(32)} ${tokens(supply.total).padStart(15)}`)
   console.log()
+
+  // The receiver is fixed in the config at launch, so a wrong address has to be
+  // caught here: after the pool exists it can no longer change.
+  if (config.token.leftover > 0) {
+    const { communityWallet, treasuryWallet, communityAmount } = config.leftoverSplit
+    console.log('Leftover routing  (sent by `launchpad claim` after migration)')
+    if (!communityWallet || !treasuryWallet) {
+      console.log(`  all of it stays on the partner wallet — set LEFTOVER_*_WALLET to split it`)
+    } else {
+      const connection = createConnection()
+      const treasuryAmount = config.token.leftover - communityAmount
+      for (const [label, wallet, share] of [
+        ['community', communityWallet, `${communityAmount.toLocaleString('en-US')}`],
+        ['treasury', treasuryWallet, `${treasuryAmount.toLocaleString('en-US')} + rounding`],
+      ] as const) {
+        const check = await checkRecipient(connection, wallet)
+        const verdict = check.ok ? check.note : `REJECTED — ${check.reason}`
+        console.log(`  ${label.padEnd(10)} ${share.padStart(26)}  → ${wallet.toBase58()}`)
+        console.log(`  ${''.padEnd(10)} ${''.padStart(26)}    ${verdict}`)
+      }
+    }
+    console.log()
+  }
 
   // Priced live rather than from a comment, so the dollar figures cannot go
   // stale between writing the profile and launching it.
