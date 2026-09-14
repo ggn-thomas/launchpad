@@ -14,6 +14,7 @@ const COMMANDS: Record<string, Command> = {
   'pre-launch': { module: './pre-launch.js', summary: 'Draw the config key, mint and pool addresses — sends nothing' },
   launch: { module: './launch.js', summary: 'Create the config, mint the token, open the curve' },
   buy: { module: './buy.js', summary: 'Quote and execute a swap on the curve' },
+  sell: { module: './sell.js', summary: 'Sell the token back to the curve for quote' },
   status: { module: './status.js', summary: 'Curve progress, price and fees earned' },
   claim: { module: './claim.js', summary: 'Collect curve fees, surplus and leftover' },
   migrate: { module: './migrate.js', summary: 'Graduate a completed curve to DAMM v2' },

@@ -83,6 +83,15 @@ function address(key: string): PublicKey | null {
   }
 }
 
+/** A token amount above 0, or `all` (the default) for the whole balance. */
+function amountOrAll(key: string): number | 'all' {
+  const value = raw(key)
+  if (value === undefined || value.toLowerCase() === 'all') return 'all'
+  const parsed = num(key)
+  if (parsed <= 0) throw new ConfigError(key, `expected a token amount above 0 or "all", got ${parsed}`)
+  return parsed
+}
+
 /** Maps a friendly .env string onto an SDK enum, listing valid values on a miss. */
 function choice<T>(key: string, options: Record<string, T>, fallback?: string): T {
   const value = (raw(key) ?? fallback)?.toLowerCase()
@@ -241,6 +250,8 @@ function buildConfig() {
       firstBuy: num('FIRST_BUY', 0.1),
       /** Quote spent by `npm run buy`. */
       buyAmount: num('BUY_AMOUNT', 0.05),
+      /** Base tokens sold by `npm run sell`, in whole tokens, or `all`. */
+      sellAmount: amountOrAll('SELL_AMOUNT'),
       slippageBps: int('SLIPPAGE_BPS', 100),
     },
   } as const
