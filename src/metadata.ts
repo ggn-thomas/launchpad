@@ -48,13 +48,13 @@ async function main(): Promise<void> {
 
   // Only include links that are actually set; placeholder socials read worse
   // than none at all.
-  const extensions = Object.fromEntries(
-    Object.entries({
-      website: token.website,
-      twitter: token.twitter,
-      telegram: token.telegram,
-    }).filter(([, value]) => value !== ''),
-  )
+  const setLinks = (links: Record<string, string>) =>
+    Object.fromEntries(Object.entries(links).filter(([, value]) => value !== ''))
+
+  // Readers differ on where they look for socials, so they are written both
+  // top-level and under `extensions`.
+  const socials = setLinks({ website: token.website, twitter: token.twitter, telegram: token.telegram })
+  const extensions = setLinks({ website: token.website, twitter: token.twitter })
 
   const metadata = {
     name: token.name,
@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     description: token.description,
     image: token.image,
     ...(token.website ? { external_url: token.website } : {}),
+    ...socials,
     ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
     properties: {
       files: [{ uri: token.image, type: contentType }],
@@ -76,7 +77,7 @@ async function main(): Promise<void> {
   console.log(`  symbol      ${metadata.symbol}`)
   console.log(`  image       ${metadata.image} (${contentType})`)
   if (!metadata.description) console.log('  WARN        no TOKEN_DESCRIPTION — wallets will show nothing')
-  if (Object.keys(extensions).length === 0) console.log('  note        no socials set')
+  if (Object.keys(socials).length === 0) console.log('  note        no socials set')
 
   console.log('\nUpload it, then put the returned URL in TOKEN_URI:')
   console.log(`  ${irysCommand()}`)
