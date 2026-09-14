@@ -50,6 +50,8 @@ the only manual copying in the whole process.
                        │
                        ▼  npm run preview        ← validates, signs nothing
                        │
+                       ▼  npm run pre-launch     ← config key, mint and pool addresses, sends nothing
+                       │
                        ▼  npm run launch         ← config + mint + pool + first buy
                        │
                        ▼  npm run status / buy
@@ -129,15 +131,34 @@ Both must pass. `accepted` means the program will take the config; it says
 nothing about whether the economics match your intent — check the numbers
 yourself, especially the USD figures printed at the live rate.
 
-### 6. Launch
+### 6. Get the addresses in advance
+
+```bash
+npm run pre-launch
+```
+
+Sends nothing. Draws the config and mint keypairs, prints the config key, the
+base mint and the pool address they produce, and saves the keypairs to
+`.launch/<symbol>.keys.json`. Running it again prints the same addresses, so
+they are safe to announce. `npm run pre-launch -- --new` draws fresh ones.
+
+The pool address depends on `QUOTE_TOKEN`: `launch` refuses to run if it changed
+since, until `pre-launch` has printed the new pool.
+
+### 7. Launch
 
 ```bash
 npm run launch
 ```
 
 Two transactions: the config, then the pool with your first buy bundled in
-atomically so the opening price cannot be sniped. Addresses are written to
-`.launch/<symbol>.json`.
+atomically so the opening price cannot be sniped. It signs with the keys from
+`pre-launch`, or draws and saves its own if you skipped that step. Addresses are
+written to `.launch/<symbol>.json` and the keys file is deleted.
+
+If it fails between the two transactions, run it again: it finds the config
+already on chain and reuses it, provided `.env` still describes the same
+partner, quote and curve.
 
 ```bash
 npm run status   # curve progress, price, fees earned
@@ -187,6 +208,7 @@ immutable, so do this before launching, never after.
 | `src/curve.ts` | Turns the config into on-chain parameters |
 | `src/preview.ts` | Prints and validates the launch before you sign it |
 | `src/metadata.ts` | Generates `metadata/token.json` from `.env` |
+| `src/pre-launch.ts` | Draws the config and mint keypairs ahead of the launch |
 | `src/launch.ts` | Creates the config, then the pool with a first buy |
 | `src/buy.ts` | Quotes and executes a swap |
 | `src/status.ts` | Reads curve progress, price and fee state |
@@ -196,7 +218,7 @@ immutable, so do this before launching, never after.
 | `src/cli.ts` | Command dispatch for the `launchpad` binary |
 | `bin/launchpad.js` | Shim that runs the CLI through tsx, no build step |
 | `src/lib/tx.ts` | Signs, simulates and sends transactions |
-| `src/lib/store.ts` | Persists launch records to `.launch/` |
+| `src/lib/store.ts` | Persists launch records and pending launch keys to `.launch/` |
 
 ## Tuning the launch
 

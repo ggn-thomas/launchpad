@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Meteora DBC token launchpad",
   "scripts": {
+    "pre-launch": "tsx src/pre-launch.ts",
     "launch": "tsx src/launch.ts",
     "buy": "tsx src/buy.ts",
     "status": "tsx src/status.ts",
