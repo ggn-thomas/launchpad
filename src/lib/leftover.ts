@@ -25,8 +25,10 @@ const HISTORY_PAGES = 5
 /** Allows sending the split for a leftover that was withdrawn without it. */
 export const FORWARD_FLAG = '--forward-leftover'
 
-type Split = { communityWallet: PublicKey; treasuryWallet: PublicKey; communityAmount: number }
+type Split = { communityWallet: PublicKey; treasuryWallet: PublicKey; communityAmount: number; treasuryAmount: number }
 type Share = { key: string; label: string; wallet: PublicKey; raw: BN }
+/** What each wallet gets, and what the program paid beyond that, which stays with the receiver. */
+type Plan = { shares: Share[]; remainder: BN }
 /** Decimals come from the chain, not .env: transferChecked rejects any mismatch. */
 type Token = { mint: PublicKey; decimals: number; program: PublicKey; symbol: string }
 
@@ -61,8 +63,9 @@ export async function routeLeftover(
   if (!configState) throw new Error('Pool config not found')
   const receiver = configState.leftoverReceiver
 
-  const { communityWallet, treasuryWallet, communityAmount } = config.leftoverSplit
-  const split: Split | null = communityWallet && treasuryWallet ? { communityWallet, treasuryWallet, communityAmount } : null
+  const { communityWallet, treasuryWallet, communityAmount, treasuryAmount } = config.leftoverSplit
+  const split: Split | null =
+    communityWallet && treasuryWallet ? { communityWallet, treasuryWallet, communityAmount, treasuryAmount } : null
 
   // Forwarding the tokens needs the receiver's signature, so the receiver has to
   // be one of the keypairs this script holds.
@@ -99,9 +102,9 @@ export async function routeLeftover(
       return true
     }
 
-    const shares = await planSplit(connection, split, leftover, token)
+    const plan = await planSplit(connection, split, leftover, token)
     console.log(`  leftover  ${format(leftover)}, withdrawn and split in one transaction:`)
-    appendSplit(tx, shares, token, receiverAta, payer.publicKey)
+    appendSplit(tx, plan, token, receiverAta, payer.publicKey)
     const signature = await sendTransaction(connection, tx, [payer], 'withdraw and split leftover')
     saveLaunch({ ...launch, leftoverSplit: signature })
     return true
@@ -113,78 +116,82 @@ export async function routeLeftover(
     console.log(`  leftover  already split -> ${explorerTx(launch.leftoverSplit)}`)
     return false
   }
-  const past = await findWithdrawal(connection, pool, receiver, mint)
+  const past = await findWithdrawal(connection, pool, mint)
   if (!past) {
     throw new Error(
       `The leftover was withdrawn, but not within the last ${HISTORY_PAGES * 100} pool transactions. ` +
         `Check wallet ${receiver.toBase58()} by hand. Nothing was sent.`,
     )
   }
-  // The receiver's balance nets to zero across a withdraw-and-split.
-  if (past.kept.lten(0)) {
+  // A withdraw-and-split credits both wallets in the withdrawal's own transaction.
+  if (past.received(split.communityWallet).gtn(0) && past.received(split.treasuryWallet).gtn(0)) {
     console.log(`  leftover  already split -> ${explorerTx(past.signature)}`)
     return false
   }
+  const kept = past.received(receiver)
 
-  console.log(`  leftover  ${format(past.kept)} was withdrawn unsplit to ${receiver.toBase58()}`)
+  console.log(`  leftover  ${format(kept)} was withdrawn unsplit to ${receiver.toBase58()}`)
   console.log(`            ${explorerTx(past.signature)}`)
   if (!process.argv.includes(FORWARD_FLAG)) {
     console.log(`            run \`launchpad claim ${FORWARD_FLAG}\` to send the split from that wallet`)
     return false
   }
 
+  const plan = await planSplit(connection, split, kept, token)
+  const owed = plan.shares.reduce((sum, share) => sum.add(share.raw), new BN(0))
   const balance = await tokenBalance(connection, receiverAta)
-  if (balance.lt(past.kept)) {
+  if (balance.lt(owed)) {
     throw new Error(
-      `Wallet ${receiver.toBase58()} holds ${format(balance)}, less than the ${format(past.kept)} withdrawn: ` +
+      `Wallet ${receiver.toBase58()} holds ${format(balance)}, less than the ${format(owed)} to split: ` +
         'some of it has already moved. Nothing was sent.',
     )
   }
-  const shares = await planSplit(connection, split, past.kept, token)
   // The launch record is the guard against a second forward, and it is local.
   // Destinations already holding their shares mean it was sent from elsewhere.
   const held = await Promise.all(
-    shares.map((share) => tokenBalance(connection, getAssociatedTokenAddressSync(mint, share.wallet, true, token.program))),
+    plan.shares.map((share) => tokenBalance(connection, getAssociatedTokenAddressSync(mint, share.wallet, true, token.program))),
   )
-  if (shares.every((share, i) => held[i]!.gte(share.raw))) {
+  if (plan.shares.every((share, i) => held[i]!.gte(share.raw))) {
     throw new Error('Both split wallets already hold at least their share, so it looks forwarded already. Nothing was sent.')
   }
 
   console.log('  forwarding the split:')
   const tx = new Transaction()
-  appendSplit(tx, shares, token, receiverAta, payer.publicKey)
+  appendSplit(tx, plan, token, receiverAta, payer.publicKey)
   const signature = await sendTransaction(connection, tx, [payer], 'forward leftover split')
   saveLaunch({ ...launch, leftoverSplit: signature })
   return true
 }
 
 /**
- * The community wallet gets exactly LEFTOVER_COMMUNITY_AMOUNT, the treasury the
- * rest, rounding included. Refuses before anything is signed, because a
- * transfer to a non-wallet is permanent.
+ * Each wallet gets exactly its configured amount; what the program paid beyond
+ * both, curve rounding, stays with the receiver. Refuses before anything is
+ * signed, because a transfer to a non-wallet is permanent.
  */
-async function planSplit(connection: Connection, split: Split, total: BN, token: Token): Promise<Share[]> {
-  const communityRaw = new BN(split.communityAmount).mul(new BN(10).pow(new BN(token.decimals)))
-  if (total.lte(communityRaw)) {
+async function planSplit(connection: Connection, split: Split, total: BN, token: Token): Promise<Plan> {
+  const raw = (tokens: number) => new BN(tokens).mul(new BN(10).pow(new BN(token.decimals)))
+  const shares: Share[] = [
+    { key: 'LEFTOVER_COMMUNITY_WALLET', label: 'community', wallet: split.communityWallet, raw: raw(split.communityAmount) },
+    { key: 'LEFTOVER_TREASURY_WALLET', label: 'treasury', wallet: split.treasuryWallet, raw: raw(split.treasuryAmount) },
+  ]
+  const remainder = total.sub(shares[0]!.raw).sub(shares[1]!.raw)
+  if (remainder.isNeg()) {
     throw new Error(
-      `The leftover is ${amount(total, token.decimals, token.symbol)}, not above LEFTOVER_COMMUNITY_AMOUNT (${split.communityAmount}). Nothing was sent.`,
+      `The leftover is ${amount(total, token.decimals, token.symbol)}, less than LEFTOVER_COMMUNITY_AMOUNT + ` +
+        `LEFTOVER_TREASURY_AMOUNT (${split.communityAmount + split.treasuryAmount}). Nothing was sent.`,
     )
   }
-  const shares: Share[] = [
-    { key: 'LEFTOVER_COMMUNITY_WALLET', label: 'community', wallet: split.communityWallet, raw: communityRaw },
-    { key: 'LEFTOVER_TREASURY_WALLET', label: 'treasury', wallet: split.treasuryWallet, raw: total.sub(communityRaw) },
-  ]
   for (const { key, wallet } of shares) {
     const check = await checkRecipient(connection, wallet)
     if (!check.ok) throw new Error(`${key} ${wallet.toBase58()} is ${check.reason}. Nothing was sent.`)
   }
-  return shares
+  return { shares, remainder }
 }
 
 /** Adds, per share, an idempotent token account creation and a transfer out of `source`. */
-function appendSplit(tx: Transaction, shares: Share[], token: Token, source: PublicKey, owner: PublicKey): void {
+function appendSplit(tx: Transaction, plan: Plan, token: Token, source: PublicKey, owner: PublicKey): void {
   const { mint, decimals, program } = token
-  for (const { label, wallet, raw } of shares) {
+  for (const { label, wallet, raw } of plan.shares) {
     console.log(`    ${label.padEnd(9)}  ${amount(raw, decimals, token.symbol).padStart(24)} → ${wallet.toBase58()}`)
     // allowOwnerOffCurve: a multisig vault is a PDA, which has no private key.
     const destination = getAssociatedTokenAddressSync(mint, wallet, true, program)
@@ -192,6 +199,9 @@ function appendSplit(tx: Transaction, shares: Share[], token: Token, source: Pub
       createAssociatedTokenAccountIdempotentInstruction(owner, destination, wallet, mint, program),
       createTransferCheckedInstruction(source, mint, destination, owner, BigInt(raw.toString()), decimals, [], program),
     )
+  }
+  if (!plan.remainder.isZero()) {
+    console.log(`    ${'remainder'.padEnd(9)}  ${amount(plan.remainder, decimals, token.symbol).padStart(24)} stays on ${owner.toBase58()}`)
   }
 }
 
@@ -225,15 +235,14 @@ async function simulateLeftover(connection: Connection, tx: Transaction, signer:
   return tokenAccountAmount(simulation.value.accounts?.[0]?.data?.[0]).sub(before)
 }
 
-/** The pool's withdraw_leftover transaction, and how much of it the receiver kept. */
+/** The pool's withdraw_leftover transaction, and how many tokens each wallet gained in it. */
 async function findWithdrawal(
   connection: Connection,
   pool: PublicKey,
-  receiver: PublicKey,
   mint: PublicKey,
-): Promise<{ signature: string; kept: BN } | null> {
-  const held = (balances: TokenBalance[] | null | undefined) =>
-    new BN(balances?.find((b) => b.mint === mint.toBase58() && b.owner === receiver.toBase58())?.uiTokenAmount.amount ?? '0')
+): Promise<{ signature: string; received: (owner: PublicKey) => BN } | null> {
+  const held = (balances: TokenBalance[] | null | undefined, owner: PublicKey) =>
+    new BN(balances?.find((b) => b.mint === mint.toBase58() && b.owner === owner.toBase58())?.uiTokenAmount.amount ?? '0')
 
   let before: string | undefined
   for (let page = 0; page < HISTORY_PAGES; page++) {
@@ -242,7 +251,8 @@ async function findWithdrawal(
       if (err) continue
       const tx = await connection.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
       if (!tx?.meta?.logMessages?.includes(WITHDRAW_LEFTOVER_LOG)) continue
-      return { signature, kept: held(tx.meta.postTokenBalances).sub(held(tx.meta.preTokenBalances)) }
+      const { preTokenBalances, postTokenBalances } = tx.meta
+      return { signature, received: (owner) => held(postTokenBalances, owner).sub(held(preTokenBalances, owner)) }
     }
     if (signatures.length < 100) break
     before = signatures.at(-1)?.signature

@@ -196,12 +196,13 @@ created first, so the script runs two transactions instead of one.
 
 The program pays the whole leftover to one address, the partner wallet, fixed
 in the config at launch. To send it to two wallets instead — two multisig
-vaults, say — set `LEFTOVER_COMMUNITY_WALLET`, `LEFTOVER_TREASURY_WALLET` and
-`LEFTOVER_COMMUNITY_AMOUNT`. `migrate` then withdraws and splits it right after
+vaults, say — set `LEFTOVER_COMMUNITY_WALLET` and `LEFTOVER_TREASURY_WALLET`
+with their exact amounts, `LEFTOVER_COMMUNITY_AMOUNT` and
+`LEFTOVER_TREASURY_AMOUNT`. `migrate` then withdraws and splits it right after
 migrating, and `claim` does the same for a pool a keeper migrated. The
-withdrawal and both transfers are one transaction, so the tokens never rest on
-the partner wallet. The community wallet gets exactly its amount; the treasury
-gets the rest, which includes a little curve rounding.
+withdrawal and both transfers are one transaction, so the split tokens never
+rest on the partner wallet. The program pays `TOKEN_LEFTOVER` plus a little
+curve rounding; whatever exceeds the two amounts stays on the partner wallet.
 
 For a Squads multisig, use the **vault** address. Tokens sent to the multisig
 account itself can never be moved, so `preview` and the split both refuse any

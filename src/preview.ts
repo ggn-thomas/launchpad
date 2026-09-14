@@ -91,22 +91,24 @@ async function main(): Promise<void> {
   // The receiver is fixed in the config at launch, so a wrong address has to be
   // caught here: after the pool exists it can no longer change.
   if (config.token.leftover > 0) {
-    const { communityWallet, treasuryWallet, communityAmount } = config.leftoverSplit
-    console.log('Leftover routing  (sent by `launchpad claim` after migration)')
+    const { communityWallet, treasuryWallet, communityAmount, treasuryAmount } = config.leftoverSplit
+    console.log('Leftover routing  (sent by `launchpad migrate` or `claim` after migration)')
     if (!communityWallet || !treasuryWallet) {
       console.log(`  all of it stays on the partner wallet — set LEFTOVER_*_WALLET to split it`)
     } else {
       const connection = createConnection()
-      const treasuryAmount = config.token.leftover - communityAmount
+      const remainder = config.token.leftover - communityAmount - treasuryAmount
       for (const [label, wallet, share] of [
-        ['community', communityWallet, `${communityAmount.toLocaleString('en-US')}`],
-        ['treasury', treasuryWallet, `${treasuryAmount.toLocaleString('en-US')} + rounding`],
+        ['community', communityWallet, communityAmount.toLocaleString('en-US')],
+        ['treasury', treasuryWallet, treasuryAmount.toLocaleString('en-US')],
       ] as const) {
         const check = await checkRecipient(connection, wallet)
         const verdict = check.ok ? check.note : `REJECTED — ${check.reason}`
         console.log(`  ${label.padEnd(10)} ${share.padStart(26)}  → ${wallet.toBase58()}`)
         console.log(`  ${''.padEnd(10)} ${''.padStart(26)}    ${verdict}`)
       }
+      const rest = `${remainder > 0 ? `${remainder.toLocaleString('en-US')} + ` : ''}rounding`
+      console.log(`  ${'remainder'.padEnd(10)} ${rest.padStart(26)}  stays on the partner wallet`)
     }
     console.log()
   }
