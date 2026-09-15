@@ -162,6 +162,7 @@ function buildConfig() {
       website: raw('TOKEN_WEBSITE') ?? '',
       twitter: raw('TOKEN_TWITTER') ?? '',
       telegram: raw('TOKEN_TELEGRAM') ?? '',
+      discord: raw('TOKEN_DISCORD') ?? '',
     },
 
     /**

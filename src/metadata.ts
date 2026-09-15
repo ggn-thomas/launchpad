@@ -48,14 +48,17 @@ async function main(): Promise<void> {
 
   // Only include links that are actually set; placeholder socials read worse
   // than none at all.
-  const setLinks = (links: Record<string, string>) =>
-    Object.fromEntries(Object.entries(links).filter(([, value]) => value !== ''))
+  const socials = Object.fromEntries(
+    Object.entries({
+      website: token.website,
+      twitter: token.twitter,
+      telegram: token.telegram,
+      discord: token.discord,
+    }).filter(([, value]) => value !== ''),
+  )
 
-  // Readers differ on where they look for socials, so they are written both
-  // top-level and under `extensions`.
-  const socials = setLinks({ website: token.website, twitter: token.twitter, telegram: token.telegram })
-  const extensions = setLinks({ website: token.website, twitter: token.twitter })
-
+  // Readers differ on where they look for socials, so every link is written
+  // both top-level and under `extensions`.
   const metadata = {
     name: token.name,
     symbol: token.symbol,
@@ -63,7 +66,7 @@ async function main(): Promise<void> {
     image: token.image,
     ...(token.website ? { external_url: token.website } : {}),
     ...socials,
-    ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
+    ...(Object.keys(socials).length > 0 ? { extensions: socials } : {}),
     properties: {
       files: [{ uri: token.image, type: contentType }],
       category: 'image',
