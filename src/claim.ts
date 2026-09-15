@@ -4,7 +4,6 @@ import BN from 'bn.js'
 import { assertFunded, config, createConnection, loadKeypair } from './env.js'
 import { BASE_DECIMALS, QUOTE_DECIMALS, QUOTE_LABEL } from './curve.js'
 import { amount } from './lib/format.js'
-import { routeLeftover } from './lib/leftover.js'
 import { loadLaunch } from './lib/store.js'
 import { sendTransaction } from './lib/tx.js'
 
@@ -102,6 +101,12 @@ async function main(): Promise<void> {
   }
   console.log()
 
+  // Routing the leftover is `launchpad leftover`'s job, kept apart so that a
+  // failing fee claim can never hold it back.
+  if (migrated && account.isWithdrawLeftover === 0 && config.leftoverSplit.communityWallet) {
+    console.log('Leftover not sent to the split wallets yet: run `launchpad leftover` first.\n')
+  }
+
   const creator = loadKeypair(config.wallets.creator)
   const partner = loadKeypair(config.wallets.partner)
   await assertFunded(connection, creator, 0.01, 'Creator')
@@ -166,11 +171,6 @@ async function main(): Promise<void> {
   if (completed && !migrationFee.partner.isZero() && (withdrawStatus & PARTNER_MIGRATION_FEE_BIT) === 0) {
     const tx = await client.partner.partnerWithdrawMigrationFee({ pool, sender: partner.publicKey })
     await sendTransaction(connection, tx, [partner], 'withdraw partner migration fee')
-    claimed += 1
-  }
-
-  // Leftover only becomes withdrawable once the migrated pool exists.
-  if (migrated && (await routeLeftover(connection, client, launch, [partner, creator]))) {
     claimed += 1
   }
 

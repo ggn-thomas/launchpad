@@ -163,8 +163,9 @@ partner, quote and curve.
 ```bash
 npm run status   # curve progress, price, fees earned
 npm run buy      # quote and execute a swap
-npm run claim       # bonding-curve fees, surplus and leftover
+npm run claim       # bonding-curve trading fees, surplus and migration fees
 npm run migrate     # graduate to DAMM v2 once the curve completes
+npm run leftover    # send the leftover to the split wallets (--watch waits for migration)
 npm run claim-pool  # DAMM v2 pool fees, after migration
 ```
 
@@ -198,19 +199,31 @@ The program pays the whole leftover to one address, the partner wallet, fixed
 in the config at launch. To send it to two wallets instead — two multisig
 vaults, say — set `LEFTOVER_COMMUNITY_WALLET` and `LEFTOVER_TREASURY_WALLET`
 with their exact amounts, `LEFTOVER_COMMUNITY_AMOUNT` and
-`LEFTOVER_TREASURY_AMOUNT`. `migrate` then withdraws and splits it right after
-migrating, and `claim` does the same for a pool a keeper migrated. The
-withdrawal and both transfers are one transaction, so the split tokens never
-rest on the partner wallet. The program pays `TOKEN_LEFTOVER` plus a little
-curve rounding; whatever exceeds the two amounts stays on the partner wallet.
+`LEFTOVER_TREASURY_AMOUNT`. The withdrawal and both transfers are one
+transaction, so the split tokens never rest on the partner wallet. The program
+pays `TOKEN_LEFTOVER` plus a little curve rounding; whatever exceeds the two
+amounts stays on the partner wallet.
+
+The leftover can only be withdrawn once the DAMM v2 pool exists. `migrate`
+splits it right after migrating. When a keeper migrates instead, at a time
+nobody announces, run this beforehand:
+
+```bash
+launchpad leftover --watch
+```
+
+It polls the pool every few seconds and sends the split the moment the
+migration lands. `launchpad leftover` without `--watch` does it once, for a pool
+that has already migrated. `claim` never touches the leftover, so a failing fee
+claim cannot hold it back.
 
 For a Squads multisig, use the **vault** address. Tokens sent to the multisig
 account itself can never be moved, so `preview` and the split both refuse any
 address owned by a program.
 
 Withdrawing the leftover is permissionless: anyone can do it first, which lands
-it unsplit on the partner wallet. `claim` finds that withdrawal in the pool
-history and, with `launchpad claim --forward-leftover`, sends the split from
+it unsplit on the partner wallet. `leftover` finds that withdrawal in the pool
+history and, with `launchpad leftover --forward-leftover`, sends the split from
 there. The signature is written to the launch record so it cannot go out twice.
 
 ### Re-running a step
@@ -234,7 +247,8 @@ immutable, so do this before launching, never after.
 | `src/buy.ts` | Quotes and executes a swap |
 | `src/status.ts` | Reads curve progress, price and fee state |
 | `src/migrate.ts` | Creates the locker if needed, then graduates to DAMM v2 |
-| `src/claim.ts` | Collects bonding-curve trading fees, surplus and leftover |
+| `src/claim.ts` | Collects bonding-curve trading fees, surplus and migration fees |
+| `src/leftover.ts` | Sends the leftover to the split wallets, waiting for migration with `--watch` |
 | `src/claim-pool.ts` | Collects DAMM v2 pool fees after migration |
 | `src/cli.ts` | Command dispatch for the `launchpad` binary |
 | `bin/launchpad.js` | Shim that runs the CLI through tsx, no build step |

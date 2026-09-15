@@ -105,7 +105,7 @@ async function leftoverAfterMigration(
     await routeLeftover(connection, client, launch, [loadKeypair(config.wallets.partner), payer])
   } catch (error) {
     console.log(`  not routed: ${error instanceof Error ? error.message : String(error)}`)
-    console.log('  The pool is migrated regardless. Run `launchpad claim` to retry the leftover.')
+    console.log('  The pool is migrated regardless. Run `launchpad leftover` to retry the leftover.')
   }
 }
 

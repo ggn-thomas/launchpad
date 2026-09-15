@@ -13,6 +13,7 @@
     "metadata": "tsx src/metadata.ts",
     "migrate": "tsx src/migrate.ts",
     "claim": "tsx src/claim.ts",
+    "leftover": "tsx src/leftover.ts",
     "claim-pool": "tsx src/claim-pool.ts"
   },
   "keywords": [],

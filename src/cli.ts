@@ -16,8 +16,9 @@ const COMMANDS: Record<string, Command> = {
   buy: { module: './buy.js', summary: 'Quote and execute a swap on the curve' },
   sell: { module: './sell.js', summary: 'Sell the token back to the curve for quote' },
   status: { module: './status.js', summary: 'Curve progress, price and fees earned' },
-  claim: { module: './claim.js', summary: 'Collect curve fees, surplus and leftover' },
+  claim: { module: './claim.js', summary: 'Collect curve trading fees, surplus and migration fees' },
   migrate: { module: './migrate.js', summary: 'Graduate a completed curve to DAMM v2' },
+  leftover: { module: './leftover.js', summary: 'Send the leftover to the split wallets (--watch waits for migration)' },
   'claim-pool': { module: './claim-pool.js', summary: 'Collect DAMM v2 pool fees after migration' },
 }
 

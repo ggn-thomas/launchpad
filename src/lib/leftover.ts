@@ -133,7 +133,7 @@ export async function routeLeftover(
   console.log(`  leftover  ${format(kept)} was withdrawn unsplit to ${receiver.toBase58()}`)
   console.log(`            ${explorerTx(past.signature)}`)
   if (!process.argv.includes(FORWARD_FLAG)) {
-    console.log(`            run \`launchpad claim ${FORWARD_FLAG}\` to send the split from that wallet`)
+    console.log(`            run \`launchpad leftover ${FORWARD_FLAG}\` to send the split from that wallet`)
     return false
   }
 
